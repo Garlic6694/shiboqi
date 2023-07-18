@@ -1,10 +1,10 @@
 #include <iostream>
-#include <fstream>
 #include <vector>
-#include <string>
-#include <sstream>
-#include <cmath>
+#include <chrono>
 #include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 typedef const std::string string;
 // 采样间隔
@@ -123,6 +123,7 @@ const std::vector<SamplePoint> voltageData = {
         {-0.00159998,   -0.194922}
 };
 
+// 程序A的功能
 // 通过阈值将模拟电压转换为离散的三电平数字电压
 int convertToDigitalVoltage(double voltage, double highThreshold, double lowThreshold) {
     if (voltage > highThreshold) {
@@ -134,82 +135,76 @@ int convertToDigitalVoltage(double voltage, double highThreshold, double lowThre
     }
 }
 
-// 采样并转换为离散的三电平数字电压
-std::vector<SamplePoint>
-sampleAndConvertToDigital(const std::vector<SamplePoint> &data, double highThreshold, double lowThreshold) {
-    std::vector<SamplePoint> digitalData;
+// 共享数据队列
+std::queue<SamplePoint> sharedQueue;
+std::mutex queueMutex;
+std::condition_variable queueCV;
 
-    for (int i = 0; i < data.size(); i += SAMPLE_INTERVAL) {
-        SamplePoint samplePoint;
+// 程序B：无休止发送数据
+void sendData() {
+    while (true) {
+        for (const SamplePoint &point: voltageData) {
+            // 发送数据操作（假设已实现）
+//            std::cout << "Sending data: time " << point.time << ", voltage " << point.voltage << std::endl;
 
-        double sumVoltage = 0.0;
+            // 将数据加入共享队列
+            std::lock_guard<std::mutex> lock(queueMutex);
+            sharedQueue.push(point);
+            queueCV.notify_one();
 
-        int count = 0;
-
-        for (int j = i - EXTRA_SAMPLES; j <= i + EXTRA_SAMPLES; ++j) {
-            if (j >= 0 && j < data.size()) {
-                sumVoltage += data[j].voltage;
-                count++;
-            }
+            // 暂停 10 纳秒
+            std::this_thread::sleep_for(std::chrono::nanoseconds(10000000));
         }
-
-        double averageVoltage = sumVoltage / count;
-        int digitalVoltage = convertToDigitalVoltage(averageVoltage, highThreshold, lowThreshold);
-
-        samplePoint.voltage = (double) digitalVoltage;
-        samplePoint.time = data[i].time;
-
-        digitalData.push_back(samplePoint);
-
-    }
-
-    return digitalData;
-}
-
-// 保存离散的数字电压数据和采样时间到CSV文件
-void saveDigitalDataToFile(const std::vector<SamplePoint> &digitalData, string &filename) {
-    std::ofstream file(filename);
-
-    if (file.is_open()) {
-        for (auto i: digitalData) {
-            file << i.time << "," << i.voltage << "\n";
-        }
-        file.close();
-        std::cout << "Digital data saved to " << filename << std::endl;
-    } else {
-        std::cerr << "Unable to open file: " << filename << std::endl;
     }
 }
+
 
 int main() {
     // 设置高阈值和低阈值
     double highThreshold = 0.1;
     double lowThreshold = -0.1;
 
-    int k = 1000000000;
+    // 创建发送数据的线程
+    std::thread senderThread(sendData);
 
-//    while (true) {
-//        for (const SamplePoint &point: voltageData) {
-//            // 发送数据操作（假设已实现）
-//            std::cout << "time:" << point.time << "  volt:" << point.voltage << std::endl;
-//
-//            // 暂停 10 纳秒
-//            std::this_thread::sleep_for(std::chrono::nanoseconds(10));
+    // 接收数据并进行处理
+    std::vector<SamplePoint> result;
+    int counter = 0;
+
+    while (true) {
+        // 从共享队列中取出数据
+        std::unique_lock<std::mutex> lock(queueMutex);
+        queueCV.wait(lock, [] { return !sharedQueue.empty(); });
+
+        // 处理数据
+        SamplePoint point = sharedQueue.front();
+        sharedQueue.pop();
+
+
+        int digitalVoltage = convertToDigitalVoltage(point.voltage, highThreshold, lowThreshold);
+        std::cout << point.time << " " << digitalVoltage << std::endl;
+
+
+//        // 按照采样间隔进行采样
+//        if (counter % SAMPLE_INTERVAL == 0) {
+//            counter = 0;
+//            SamplePoint sample{};
+//            int digitalVoltage = convertToDigitalVoltage(point.voltage, highThreshold, lowThreshold);
+//            sample.voltage = static_cast<double>(digitalVoltage);
+//            sample.time = point.time;
+//            result.push_back(sample);
+//            // 输出处理后的数据
+//            std::cout << "Processed data: voltage " << sample.voltage << ", time " << sample.time << std::endl;
 //        }
-//        k--;
-//        if (k == 0) {
-//            break;
-//        }
-//    }
+//        counter++;
 
-
-    std::vector<SamplePoint> digitalData = sampleAndConvertToDigital(voltageData, highThreshold, lowThreshold);
-
-    for (auto &i: digitalData) {
-        std::cout << "data " << i.voltage << " " << i.time << std::endl;
+        // 退出循环的条件
+        if (sharedQueue.empty() && senderThread.joinable()) {
+            break;
+        }
     }
 
-    saveDigitalDataToFile(digitalData, "digital_data.csv");
+    senderThread.join(); // 等待发送数据的线程结束
 
     return 0;
 }
