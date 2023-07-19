@@ -1,10 +1,10 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
-#include <chrono>
+#include <string>
+#include <sstream>
+#include <cmath>
 #include <thread>
-#include <queue>
-#include <mutex>
-#include <condition_variable>
 
 typedef const std::string string;
 // 采样间隔
@@ -15,115 +15,9 @@ const int EXTRA_SAMPLES = 10;
 // 数据结构，表示采样点
 struct SamplePoint {
     double time; // 表示采样时间
-    double voltage; //表示采样电压
+    double voltage; // 表示采样电压
 };
 
-// 模拟电压数据
-const std::vector<SamplePoint> voltageData = {
-        {-0.0016,       -0.004688},
-        {-0.0015999998, -0.000781},
-        {-0.0015999996, -0.001758},
-        {-0.0015999994, -0.00625},
-        {-0.0015999992, -0.006055},
-        {-0.001599999,  -0.002539},
-        {-0.0015999988, -0.001367},
-        {-0.0015999986, -0.001563},
-        {-0.0015999984, -0.00332},
-        {-0.0015999982, -0.008203},
-        {-0.001599998,  -0.011133},
-        {-0.0015999978, -0.010547},
-        {-0.0015999976, -0.010156},
-        {-0.0015999974, -0.009961},
-        {-0.0015999972, -0.009961},
-        {-0.001599997,  -0.011719},
-        {-0.0015999968, -0.012695},
-        {-0.0015999966, -0.012109},
-        {-0.0015999964, -0.014844},
-        {-0.0015999962, -0.020117},
-        {-0.001599996,  -0.024219},
-        {-0.0015999958, -0.024609},
-        {-0.0015999956, -0.02207},
-        {-0.0015999954, -0.02168},
-        {-0.0015999952, -0.025},
-        {-0.001599995,  -0.026562},
-        {-0.0015999948, -0.025977},
-        {-0.0015999946, -0.029492},
-        {-0.0015999944, -0.034766},
-        {-0.0015999942, -0.035156},
-        {-0.001599994,  -0.037109},
-        {-0.0015999938, -0.043555},
-        {-0.0015999936, -0.04668},
-        {-0.0015999934, -0.04668},
-        {-0.0015999932, -0.049414},
-        {-0.001599993,  -0.051953},
-        {-0.0015999928, -0.051758},
-        {-0.0015999926, -0.054688},
-        {-0.0015999924, -0.060938},
-        {-0.0015999922, -0.0625},
-        {-0.001599992,  -0.063281},
-        {-0.0015999918, -0.067578},
-        {-0.0015999916, -0.067969},
-        {-0.0015999914, -0.067188},
-        {-0.0015999912, -0.075},
-        {-0.001599991,  -0.083594},
-        {-0.0015999908, -0.083594},
-        {-0.0015999906, -0.084961},
-        {-0.0015999904, -0.092188},
-        {-0.0015999902, -0.096289},
-        {-0.00159999,   -0.094922},
-        {-0.0015999898, -0.096484},
-        {-0.0015999896, -0.102148},
-        {-0.0015999894, -0.105664},
-        {-0.0015999892, -0.108984},
-        {-0.001599989,  -0.112695},
-        {-0.0015999888, -0.112891},
-        {-0.0015999886, -0.114844},
-        {-0.0015999884, -0.120312},
-        {-0.0015999882, -0.124414},
-        {-0.001599988,  -0.127734},
-        {-0.0015999878, -0.130859},
-        {-0.0015999876, -0.132812},
-        {-0.0015999874, -0.135352},
-        {-0.0015999872, -0.139258},
-        {-0.001599987,  -0.144336},
-        {-0.0015999868, -0.148633},
-        {-0.0015999866, -0.150391},
-        {-0.0015999864, -0.152344},
-        {-0.0015999862, -0.154102},
-        {-0.001599986,  -0.154492},
-        {-0.0015999858, -0.158008},
-        {-0.0015999856, -0.164648},
-        {-0.0015999854, -0.167969},
-        {-0.0015999852, -0.167383},
-        {-0.001599985,  -0.168555},
-        {-0.0015999848, -0.171875},
-        {-0.0015999846, -0.174805},
-        {-0.0015999844, -0.176758},
-        {-0.0015999842, -0.17793},
-        {-0.001599984,  -0.179297},
-        {-0.0015999838, -0.181055},
-        {-0.0015999836, -0.181641},
-        {-0.0015999834, -0.183398},
-        {-0.0015999832, -0.183789},
-        {-0.001599983,  -0.182031},
-        {-0.0015999828, -0.185742},
-        {-0.0015999826, -0.191797},
-        {-0.0015999824, -0.191406},
-        {-0.0015999822, -0.189453},
-        {-0.001599982,  -0.190625},
-        {-0.0015999818, -0.19082},
-        {-0.0015999816, -0.189844},
-        {-0.0015999814, -0.188672},
-        {-0.0015999812, -0.188086},
-        {-0.001599981,  -0.190234},
-        {-0.0015999808, -0.192969},
-        {-0.0015999806, -0.192383},
-        {-0.0015999804, -0.189648},
-        {-0.0015999802, -0.191406},
-        {-0.00159998,   -0.194922}
-};
-
-// 程序A的功能
 // 通过阈值将模拟电压转换为离散的三电平数字电压
 int convertToDigitalVoltage(double voltage, double highThreshold, double lowThreshold) {
     if (voltage > highThreshold) {
@@ -135,76 +29,205 @@ int convertToDigitalVoltage(double voltage, double highThreshold, double lowThre
     }
 }
 
-// 共享数据队列
-std::queue<SamplePoint> sharedQueue;
-std::mutex queueMutex;
-std::condition_variable queueCV;
+// 采样并转换为离散的三电平数字电压
+std::vector<SamplePoint>
+sampleAndConvertToDigital(const std::vector<SamplePoint> &data, double highThreshold, double lowThreshold) {
+    std::vector<SamplePoint> digitalData;
 
-// 程序B：无休止发送数据
-void sendData() {
-    while (true) {
-        for (const SamplePoint &point: voltageData) {
-            // 发送数据操作（假设已实现）
-//            std::cout << "Sending data: time " << point.time << ", voltage " << point.voltage << std::endl;
+    for (int i = 0; i < data.size(); i += SAMPLE_INTERVAL) {
+        SamplePoint samplePoint;
 
-            // 将数据加入共享队列
-            std::lock_guard<std::mutex> lock(queueMutex);
-            sharedQueue.push(point);
-            queueCV.notify_one();
+        double sumVoltage = 0.0;
+        int count = 0;
 
-            // 暂停 10 纳秒
-            std::this_thread::sleep_for(std::chrono::nanoseconds(10000000));
+        for (int j = i - EXTRA_SAMPLES; j <= i + EXTRA_SAMPLES; ++j) {
+            if (j >= 0 && j < data.size()) {
+                sumVoltage += data[j].voltage;
+                count++;
+            }
         }
+
+        double averageVoltage = sumVoltage / count;
+        int digitalVoltage = convertToDigitalVoltage(averageVoltage, highThreshold, lowThreshold);
+
+        samplePoint.voltage = (double) digitalVoltage;
+        samplePoint.time = data[i].time;
+
+        digitalData.push_back(samplePoint);
+    }
+
+    return digitalData;
+}
+
+// 保存离散的数字电压数据和采样时间到CSV文件
+void saveDigitalDataToFile(const std::vector<SamplePoint> &digitalData, string &filename) {
+    std::ofstream file(filename);
+
+    if (file.is_open()) {
+        for (auto i: digitalData) {
+            file << i.time << "," << i.voltage << "\n";
+        }
+        file.close();
+        std::cout << "Digital data saved to " << filename << std::endl;
+    } else {
+        std::cerr << "Unable to open file: " << filename << std::endl;
     }
 }
 
+//// 查找并保存特定电压序列及后续片段的函数
+//std::vector<std::vector<SamplePoint>> findAndSaveSequences(const std::vector<SamplePoint> &data) {
+//    const std::vector<std::vector<int>> targetSequences = {
+//            {1, -1, -1, 1, 1, 0},
+//            {1, -1, -1, 1, 1, 1}
+//    };
+//    std::vector<std::vector<SamplePoint>> sequences;
+//    std::vector<SamplePoint> currentSequence;
+//    std::vector<SamplePoint> targetPointSequence;
+//
+//    for (size_t i = 0; i < data.size(); i++) {
+//        for (const auto &targetSequence: targetSequences) {
+////            targetPointSequence.clear();
+//            if (data[i].voltage == targetSequence[0]) {
+//                // 检查后续的电压序列是否与目标序列相匹配
+//                size_t j = 1;
+//                while (i + j < data.size() && j < targetSequence.size() && data[i + j].voltage == targetSequence[j]) {
+//                    j++;
+//                    targetPointSequence.push_back(data[i + j]);
+//                }
+//
+//                // 如果找到完整的目标序列，继续匹配后一位为0或1的片段
+//                if (j == targetSequence.size()) {
+//                    size_t k = 1;
+//                    while (i + j + k < data.size() && (data[i + j + k].voltage == 0 || data[i + j + k].voltage == 1)) {
+//                        currentSequence.push_back(data[i + j + k]);
+//                        k++;
+//                    }
+////                    currentSequence.insert(currentSequence.begin(), targetPointSequence.begin(), targetPointSequence.end());
+//                    sequences.push_back(currentSequence);
+//                    currentSequence.clear();
+//                }
+//            }
+//        }
+//    }
+//
+//    return sequences;
+//}
+
+// 查找并保存特定电压序列及后续片段的函数
+std::vector<std::vector<SamplePoint>> findAndSaveSequences(const std::vector<SamplePoint> &data) {
+    const std::vector<std::vector<int>> targetSequences = {
+            {1, -1, -1, 1, 1, 0},
+            {1, -1, -1, 1, 1, 1}
+    };
+    std::vector<std::vector<SamplePoint>> sequences;
+    std::vector<SamplePoint> currentSequence;
+    std::vector<SamplePoint> targetPointSequence;
+
+    for (size_t i = 0; i < data.size(); i++) {
+        for (const auto &targetSequence: targetSequences) {
+            if (data[i].voltage == targetSequence[0]) {
+                // 检查后续的电压序列是否与目标序列相匹配
+                size_t j = 1;
+                while (i + j < data.size() && j < targetSequence.size() && data[i + j].voltage == targetSequence[j]) {
+                    j++;
+                    targetPointSequence.push_back(data[i + j]);
+                }
+
+                // 如果找到完整的目标序列，保存该序列及后续片段
+                if (j == targetSequence.size()) {
+                    currentSequence.insert(currentSequence.begin(), targetPointSequence.begin(),
+                                           targetPointSequence.end());
+                    sequences.push_back(currentSequence);
+                    currentSequence.clear();
+                    targetPointSequence.clear();
+
+                    // 保存目标序列后续的每个电压值和时间值
+                    while (i + j < data.size() && data[i + j].voltage != targetSequence[0]) {
+                        currentSequence.push_back(data[i + j]);
+                        j++;
+                    }
+                }
+            } else if (!currentSequence.empty()) {
+                currentSequence.push_back(data[i]);
+            }
+        }
+    }
+
+    return sequences;
+}
+
+
+// 保存sequences到txt文件中
+void saveSequencesToFile(const std::vector<std::vector<SamplePoint>> &sequences, const std::string &filename) {
+    std::ofstream outputFile(filename);
+
+    if (outputFile.is_open()) {
+        for (const auto &sequence: sequences) {
+            for (const auto &point: sequence) {
+                outputFile << " " << point.voltage;
+            }
+            outputFile << "-----------\n";
+        }
+        outputFile.close();
+        std::cout << "Sequences saved to " << filename << std::endl;
+    } else {
+        std::cerr << "Unable to open file: " << filename << std::endl;
+    }
+}
 
 int main() {
     // 设置高阈值和低阈值
     double highThreshold = 0.1;
     double lowThreshold = -0.1;
 
-    // 创建发送数据的线程
-    std::thread senderThread(sendData);
-
-    // 接收数据并进行处理
-    std::vector<SamplePoint> result;
-    int counter = 0;
-
-    while (true) {
-        // 从共享队列中取出数据
-        std::unique_lock<std::mutex> lock(queueMutex);
-        queueCV.wait(lock, [] { return !sharedQueue.empty(); });
-
-        // 处理数据
-        SamplePoint point = sharedQueue.front();
-        sharedQueue.pop();
-
-
-        int digitalVoltage = convertToDigitalVoltage(point.voltage, highThreshold, lowThreshold);
-        std::cout << point.time << " " << digitalVoltage << std::endl;
-
-
-//        // 按照采样间隔进行采样
-//        if (counter % SAMPLE_INTERVAL == 0) {
-//            counter = 0;
-//            SamplePoint sample{};
-//            int digitalVoltage = convertToDigitalVoltage(point.voltage, highThreshold, lowThreshold);
-//            sample.voltage = static_cast<double>(digitalVoltage);
-//            sample.time = point.time;
-//            result.push_back(sample);
-//            // 输出处理后的数据
-//            std::cout << "Processed data: voltage " << sample.voltage << ", time " << sample.time << std::endl;
-//        }
-//        counter++;
-
-        // 退出循环的条件
-        if (sharedQueue.empty() && senderThread.joinable()) {
-            break;
+    // 从CSV文件中读取电压数据
+    std::vector<SamplePoint> voltageData;
+    std::ifstream inputFile("../voltage_data.csv");
+    if (inputFile.is_open()) {
+        std::string line;
+        while (std::getline(inputFile, line)) {
+            std::istringstream iss(line);
+            SamplePoint sample;
+            char comma;
+            if (iss >> sample.time >> comma >> sample.voltage) {
+                voltageData.push_back(sample);
+            }
         }
+        inputFile.close();
+    } else {
+        std::cerr << "Unable to open file: voltage_data.csv" << std::endl;
+        return 1;
     }
 
-    senderThread.join(); // 等待发送数据的线程结束
+    // 对电压数据进行采样和转换为离散的三电平数字电压
+    std::vector<SamplePoint> digitalData = sampleAndConvertToDigital(voltageData, highThreshold, lowThreshold);
+
+    // 打印结果
+    for (auto &i: digitalData) {
+        std::cout << "data " << i.time << " " << i.voltage << std::endl;
+    }
+
+    // 保存离散的数字电压数据到CSV文件
+    saveDigitalDataToFile(digitalData, "digital_data.csv");
+
+
+    // 查找并保存特定电压序列及后续片段
+    std::vector<std::vector<SamplePoint>> sequences = findAndSaveSequences(digitalData);
+
+    // 保存sequences到txt文件
+    saveSequencesToFile(sequences, "sequences.txt");
+
+    // 输出找到的所有序列及后续片段的时间和电压
+    std::cout << "Found sequences and subsequent fragments:" << std::endl;
+    for (const auto &sequence: sequences) {
+        for (const auto &point: sequence) {
+            std::cout << "Time: " << point.time << ", Voltage: " << point.voltage << std::endl;
+        }
+        std::cout << "-----------" << std::endl;
+    }
 
     return 0;
 }
+// 101      010         11
+// 1,-1     ,-1 1,        1
+// 1,-1,-1 1,1
