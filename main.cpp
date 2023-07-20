@@ -176,26 +176,53 @@ void saveSequencesToFile(const std::vector<std::vector<SamplePoint>> &sequences,
 }
 
 int main() {
+    setbuf(stdout, 0);
+
     // 设置高阈值和低阈值
     double highThreshold = 0.1;
     double lowThreshold = -0.1;
 
     // 从CSV文件中读取电压数据
     std::vector<SamplePoint> voltageData;
-    std::ifstream inputFile("../voltage_data.csv");
-    if (inputFile.is_open()) {
+    FILE *inputFile = fopen("../CY4457_5G16M.csv", "r");
+
+    if (inputFile) {
+        // Get the size of the file
+        fseek(inputFile, 0, SEEK_END);
+        long fileSize = ftell(inputFile);
+        printf("fileSize:%ld\n", fileSize);
+        fseek(inputFile, 0, SEEK_SET);
+
+        // Allocate memory to store the entire file content
+        char *buffer = new char[fileSize + 1];
+        if (!buffer) {
+            std::cerr << "Failed to allocate memory for reading file." << std::endl;
+            return 1;
+        }
+
+        // Read the entire file into the buffer
+        size_t bytesRead = fread(buffer, 1, fileSize, inputFile);
+        buffer[bytesRead] = '\0'; // Null-terminate the buffer
+
+        // Close the file
+        fclose(inputFile);
+
+        // Process the data in the buffer
+        std::istringstream iss(buffer);
         std::string line;
-        while (std::getline(inputFile, line)) {
-            std::istringstream iss(line);
-            SamplePoint sample;
+        while (std::getline(iss, line)) {
+            std::istringstream lineStream(line);
+            SamplePoint sample{};
             char comma;
-            if (iss >> sample.time >> comma >> sample.voltage) {
+            if (lineStream >> sample.time >> comma >> sample.voltage) {
                 voltageData.push_back(sample);
             }
         }
-        inputFile.close();
+
+        // Free the allocated memory
+        delete[] buffer;
     } else {
-        std::cerr << "Unable to open file: voltage_data.csv" << std::endl;
+        std::cerr << "Unable to open file: CY4457_5G16M.csv" << std::endl;
         return 1;
     }
 
@@ -203,9 +230,17 @@ int main() {
     std::vector<SamplePoint> digitalData = sampleAndConvertToDigital(voltageData, highThreshold, lowThreshold);
 
     // 打印结果
+
+    int length = digitalData.size();
+    int k = 0;
     for (auto &i: digitalData) {
-        std::cout << "data " << i.time << " " << i.voltage << std::endl;
+        printf("%f %% ", k * 1.0 / length * 100);
+        k++;
+        printf("Time %f ,Voltage %f\n", i.time, i.voltage);
     }
+
+    printf("@@@@@@@@@@@@@@@@hello world@@@@@@@@@@@@@@@@\n");
+
 
     // 保存离散的数字电压数据到CSV文件
     saveDigitalDataToFile(digitalData, "digital_data.csv");
