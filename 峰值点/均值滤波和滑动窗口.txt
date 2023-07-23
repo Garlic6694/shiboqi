@@ -1,0 +1,119 @@
+#include <iostream>
+#include <vector>
+#include <sstream>
+
+struct SamplePoint {
+    double time;
+    double voltage;
+};
+
+// 均值滤波函数
+std::vector<double> meanFilter(const std::vector<SamplePoint>& data, int windowSize) {
+    int n = data.size();
+    std::vector<double> smoothedData(n, 0.0);
+
+    for (int i = 0; i < n; ++i) {
+        int start = std::max(0, i - windowSize / 2);
+        int end = std::min(n - 1, i + windowSize / 2);
+
+        double sum = 0.0;
+        for (int j = start; j <= end; ++j) {
+            sum += data[j].voltage;
+        }
+
+        smoothedData[i] = sum / (end - start + 1);
+    }
+
+    return smoothedData;
+}
+
+// 寻找第一个波峰位置的函数
+int findFirstPeakSlidingWindow(const std::vector<double>& smoothedData, int windowSize) {
+    int n = smoothedData.size();
+
+    for (int i = 1; i < n - 1; ++i) {
+        bool isPeak = true;
+
+        // 在当前窗口内查找峰值
+        for (int j = i + 1; j < i + windowSize; ++j) {
+            if (smoothedData[j] <= smoothedData[j - 1]) {
+                isPeak = false;
+                break;
+            }
+        }
+
+        if (isPeak) {
+            return i + windowSize / 2; // 返回窗口中间位置作为峰值位置
+        }
+    }
+
+    return -1; // 如果没有找到峰值，则返回-1表示失败
+}
+
+int main() {
+
+
+    // 从CSV文件中读取电压数据
+    std::vector<SamplePoint> voltageData;
+    FILE *inputFile = fopen("../sample_data.csv", "r");
+
+    if (inputFile) {
+        // Get the size of the file
+        fseek(inputFile, 0, SEEK_END);
+        long fileSize = ftell(inputFile);
+        printf("fileSize:%ld\n", fileSize);
+        fseek(inputFile, 0, SEEK_SET);
+
+        // Allocate memory to store the entire file content
+        char *buffer = new char[fileSize + 1];
+        if (!buffer) {
+            std::cerr << "Failed to allocate memory for reading file." << std::endl;
+            return 1;
+        }
+
+        // Read the entire file into the buffer
+        size_t bytesRead = fread(buffer, 1, fileSize, inputFile);
+        buffer[bytesRead] = '\0'; // Null-terminate the buffer
+
+        // Close the file
+        fclose(inputFile);
+
+        // Process the data in the buffer
+        std::istringstream iss(buffer);
+        std::string line;
+        while (std::getline(iss, line)) {
+            std::istringstream lineStream(line);
+            SamplePoint sample{};
+            char comma;
+            if (lineStream >> sample.time >> comma >> sample.voltage) {
+                voltageData.push_back(sample);
+            }
+        }
+
+        // Free the allocated memory
+        delete[] buffer;
+    } else {
+        std::cerr << "Unable to open file: sample_data.csv" << std::endl;
+        return 1;
+    }
+
+
+
+    int windowSize = 75; // 设置滑动窗口的大小，根据数据特性调整
+
+    // 均值滤波处理数据
+    std::vector<double> smoothedData = meanFilter(voltageData, windowSize);
+
+    // 寻找第一个波峰位置
+    int peakPosition = findFirstPeakSlidingWindow(smoothedData, windowSize);
+
+    if (peakPosition != -1) {
+        std::cout << "First peak detected at index: " << peakPosition << std::endl;
+        std::cout << "Time: " << voltageData[peakPosition].time << std::endl;
+        std::cout << "Voltage: " << voltageData[peakPosition].voltage << std::endl;
+    } else {
+        std::cout << "No peak detected." << std::endl;
+    }
+
+    return 0;
+}

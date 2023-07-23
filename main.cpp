@@ -1,191 +1,104 @@
 #include <iostream>
-#include <fstream>
 #include <vector>
-#include <string>
 #include <sstream>
-#include <cmath>
-#include <thread>
+#include <iomanip>
 
-typedef const std::string string;
-// 采样间隔
-const int SAMPLE_INTERVAL = 75;
-// 前后额外采样点数量
-const int EXTRA_SAMPLES = 10;
 
-// 数据结构，表示采样点
+// 重载+号运算符
+template<typename T>
+std::vector<T> &operator+(std::vector<T> &v1, std::vector<T> &v2) {
+    v1.insert(v1.end(), v2.begin(), v2.end());
+    return v1;
+}
+
 struct SamplePoint {
-    double time; // 表示采样时间
-    double voltage; // 表示采样电压
+    double time;
+    double voltage;
 };
 
-// 通过阈值将模拟电压转换为离散的三电平数字电压
-int convertToDigitalVoltage(double voltage, double highThreshold, double lowThreshold) {
-    if (voltage > highThreshold) {
-        return 1;
-    } else if (voltage < lowThreshold) {
-        return -1;
-    } else {
-        return 0;
+// 均值滤波函数
+std::vector<double> meanFilter(const std::vector<SamplePoint> &data, int windowSize) {
+    int n = data.size();
+    std::vector<double> smoothedData(n, 0.0);
+
+    for (int i = 0; i < n; ++i) {
+        int start = std::max(0, i - windowSize / 2);
+        int end = std::min(n - 1, i + windowSize / 2);
+
+        double sum = 0.0;
+        for (int j = start; j <= end; ++j) {
+            sum += data[j].voltage;
+        }
+
+        smoothedData[i] = sum / (end - start + 1);
     }
+
+    return smoothedData;
 }
 
-// 采样并转换为离散的三电平数字电压
-std::vector<SamplePoint>
-sampleAndConvertToDigital(const std::vector<SamplePoint> &data, double highThreshold, double lowThreshold) {
-    std::vector<SamplePoint> digitalData;
+// 寻找第一个波峰位置的函数
+int findFirstPeakSlidingWindow(const std::vector<double> &smoothedData, int windowSize) {
+    int n = smoothedData.size();
 
-    for (int i = 0; i < data.size(); i += SAMPLE_INTERVAL) {
-        SamplePoint samplePoint;
+    for (int i = 1; i < n - 1; ++i) {
+        bool isPeak = true;
 
-        double sumVoltage = 0.0;
-        int count = 0;
-
-        for (int j = i - EXTRA_SAMPLES; j <= i + EXTRA_SAMPLES; ++j) {
-            if (j >= 0 && j < data.size()) {
-                sumVoltage += data[j].voltage;
-                count++;
+        // 在当前窗口内查找峰值
+        for (int j = i + 1; j < i + windowSize; ++j) {
+            if (smoothedData[j] <= smoothedData[j - 1]) {
+                isPeak = false;
+                break;
             }
         }
 
-        double averageVoltage = sumVoltage / count;
-        int digitalVoltage = convertToDigitalVoltage(averageVoltage, highThreshold, lowThreshold);
-
-        samplePoint.voltage = (double) digitalVoltage;
-        samplePoint.time = data[i].time;
-
-        digitalData.push_back(samplePoint);
-    }
-
-    return digitalData;
-}
-
-// 保存离散的数字电压数据和采样时间到CSV文件
-void saveDigitalDataToFile(const std::vector<SamplePoint> &digitalData, string &filename) {
-    std::ofstream file(filename);
-
-    if (file.is_open()) {
-        for (auto i: digitalData) {
-            file << i.time << "," << i.voltage << "\n";
-        }
-        file.close();
-        std::cout << "Digital data saved to " << filename << std::endl;
-    } else {
-        std::cerr << "Unable to open file: " << filename << std::endl;
-    }
-}
-
-//// 查找并保存特定电压序列及后续片段的函数
-//std::vector<std::vector<SamplePoint>> findAndSaveSequences(const std::vector<SamplePoint> &data) {
-//    const std::vector<std::vector<int>> targetSequences = {
-//            {1, -1, -1, 1, 1, 0},
-//            {1, -1, -1, 1, 1, 1}
-//    };
-//    std::vector<std::vector<SamplePoint>> sequences;
-//    std::vector<SamplePoint> currentSequence;
-//    std::vector<SamplePoint> targetPointSequence;
-//
-//    for (size_t i = 0; i < data.size(); i++) {
-//        for (const auto &targetSequence: targetSequences) {
-////            targetPointSequence.clear();
-//            if (data[i].voltage == targetSequence[0]) {
-//                // 检查后续的电压序列是否与目标序列相匹配
-//                size_t j = 1;
-//                while (i + j < data.size() && j < targetSequence.size() && data[i + j].voltage == targetSequence[j]) {
-//                    j++;
-//                    targetPointSequence.push_back(data[i + j]);
-//                }
-//
-//                // 如果找到完整的目标序列，继续匹配后一位为0或1的片段
-//                if (j == targetSequence.size()) {
-//                    size_t k = 1;
-//                    while (i + j + k < data.size() && (data[i + j + k].voltage == 0 || data[i + j + k].voltage == 1)) {
-//                        currentSequence.push_back(data[i + j + k]);
-//                        k++;
-//                    }
-////                    currentSequence.insert(currentSequence.begin(), targetPointSequence.begin(), targetPointSequence.end());
-//                    sequences.push_back(currentSequence);
-//                    currentSequence.clear();
-//                }
-//            }
-//        }
-//    }
-//
-//    return sequences;
-//}
-
-// 查找并保存特定电压序列及后续片段的函数
-std::vector<std::vector<SamplePoint>> findAndSaveSequences(const std::vector<SamplePoint> &data) {
-    const std::vector<std::vector<int>> targetSequences = {
-            {1, -1, -1, 1, 1, 0},
-            {1, -1, -1, 1, 1, 1}
-    };
-    std::vector<std::vector<SamplePoint>> sequences;
-    std::vector<SamplePoint> currentSequence;
-    std::vector<SamplePoint> targetPointSequence;
-
-    for (size_t i = 0; i < data.size(); i++) {
-        for (const auto &targetSequence: targetSequences) {
-            if (data[i].voltage == targetSequence[0]) {
-                // 检查后续的电压序列是否与目标序列相匹配
-                size_t j = 1;
-                while (i + j < data.size() && j < targetSequence.size() && data[i + j].voltage == targetSequence[j]) {
-                    j++;
-                    targetPointSequence.push_back(data[i + j]);
-                }
-
-                // 如果找到完整的目标序列，保存该序列及后续片段
-                if (j == targetSequence.size()) {
-                    currentSequence.insert(currentSequence.begin(), targetPointSequence.begin(),
-                                           targetPointSequence.end());
-                    sequences.push_back(currentSequence);
-                    currentSequence.clear();
-                    targetPointSequence.clear();
-
-                    // 保存目标序列后续的每个电压值和时间值
-                    while (i + j < data.size() && data[i + j].voltage != targetSequence[0]) {
-                        currentSequence.push_back(data[i + j]);
-                        j++;
-                    }
-                }
-            } else if (!currentSequence.empty()) {
-                currentSequence.push_back(data[i]);
-            }
+        if (isPeak) {
+            return i + windowSize / 2; // 返回窗口中间位置作为峰值位置
         }
     }
 
-    return sequences;
+    return -1; // 如果没有找到峰值，则返回-1表示失败
 }
 
 
-// 保存sequences到txt文件中
-void saveSequencesToFile(const std::vector<std::vector<SamplePoint>> &sequences, const std::string &filename) {
-    std::ofstream outputFile(filename);
+// 将采样后的数据转换为新的数据格式
+std::vector<SamplePoint> transformData(const std::vector<SamplePoint> &sampledData,
+                                       double highThreshold, double lowThreshold) {
+    std::vector<SamplePoint> transformedData;
 
-    if (outputFile.is_open()) {
-        for (const auto &sequence: sequences) {
-            for (const auto &point: sequence) {
-                outputFile << " " << point.voltage;
-            }
-            outputFile << "-----------\n";
+    for (const auto &point: sampledData) {
+        double voltage = 0.0;
+        if (point.voltage > highThreshold) {
+            voltage = 1.0; // 设置为1，表示电压大于高阈值
+        } else if (point.voltage < lowThreshold) {
+            voltage = -1.0; // 设置为-1，表示电压小于低阈值
+        } else {
+            voltage = 0.0; // 设置为0，表示电压在高低阈值之间
         }
-        outputFile.close();
-        std::cout << "Sequences saved to " << filename << std::endl;
-    } else {
-        std::cerr << "Unable to open file: " << filename << std::endl;
+        transformedData.push_back({point.time, voltage});
     }
+
+    return transformedData;
 }
 
-int main() {
-    setbuf(stdout, 0);
 
-    // 设置高阈值和低阈值
-    double highThreshold = 0.1;
-    double lowThreshold = -0.1;
+// 采样函数，按照指定采样间隔对数据进行采样
+std::vector<SamplePoint> sampleData(const std::vector<SamplePoint> &data, int samplingInterval, int peakPosition) {
+    std::vector<SamplePoint> sampledData;
 
-    // 从CSV文件中读取电压数据
+    int currentIndex = peakPosition;
+    while (currentIndex < data.size()) {
+        sampledData.push_back(data[currentIndex]);
+        currentIndex += samplingInterval;
+    }
+
+    return sampledData;
+}
+
+// 读取文件获取电压数据
+std::vector<SamplePoint> readVoltageDataFromFile(const std::string &filename) {
     std::vector<SamplePoint> voltageData;
-    FILE *inputFile = fopen("../CY4457_5G16M.csv", "r");
 
+    FILE *inputFile = fopen(filename.c_str(), "r");
     if (inputFile) {
         // Get the size of the file
         fseek(inputFile, 0, SEEK_END);
@@ -196,8 +109,7 @@ int main() {
         // Allocate memory to store the entire file content
         char *buffer = new char[fileSize + 1];
         if (!buffer) {
-            std::cerr << "Failed to allocate memory for reading file." << std::endl;
-            return 1;
+            fprintf(stderr, "Failed to allocate memory for reading file.\n");
         }
 
         // Read the entire file into the buffer
@@ -222,47 +134,115 @@ int main() {
         // Free the allocated memory
         delete[] buffer;
     } else {
-        std::cerr << "Unable to open file: CY4457_5G16M.csv" << std::endl;
-        return 1;
+        fprintf(stderr, "Unable to open file: sample_data.csv\n");
     }
 
-    // 对电压数据进行采样和转换为离散的三电平数字电压
-    std::vector<SamplePoint> digitalData = sampleAndConvertToDigital(voltageData, highThreshold, lowThreshold);
+    return voltageData;
+}
 
-    // 打印结果
+// Function to split transformedData with the given pattern
+std::vector<std::vector<SamplePoint>>
+splitData(const std::vector<SamplePoint> &transformedData, const std::vector<double> &pattern) {
+    int patternSize = pattern.size();
+    int dataIndex = 0;
+    std::vector<std::vector<SamplePoint>> segments;
+    std::vector<SamplePoint> currentSegment;
 
-    int length = digitalData.size();
-    int k = 0;
-    for (auto &i: digitalData) {
-        printf("%f %% ", k * 1.0 / length * 100);
-        k++;
-        printf("Time %f ,Voltage %f\n", i.time, i.voltage);
-    }
+    for (const auto &point: transformedData) {
+        currentSegment.push_back(point);
 
-    printf("@@@@@@@@@@@@@@@@hello world@@@@@@@@@@@@@@@@\n");
-
-
-    // 保存离散的数字电压数据到CSV文件
-    saveDigitalDataToFile(digitalData, "digital_data.csv");
-
-
-    // 查找并保存特定电压序列及后续片段
-    std::vector<std::vector<SamplePoint>> sequences = findAndSaveSequences(digitalData);
-
-    // 保存sequences到txt文件
-    saveSequencesToFile(sequences, "sequences.txt");
-
-    // 输出找到的所有序列及后续片段的时间和电压
-    std::cout << "Found sequences and subsequent fragments:" << std::endl;
-    for (const auto &sequence: sequences) {
-        for (const auto &point: sequence) {
-            std::cout << "Time: " << point.time << ", Voltage: " << point.voltage << std::endl;
+        if (dataIndex < patternSize && pattern[dataIndex] == point.voltage) {
+            dataIndex++;
         }
-        std::cout << "-----------" << std::endl;
+
+        // Check if the pattern is complete, and if so, add the segment to the list and reset
+        if (dataIndex == patternSize) {
+            segments.push_back(currentSegment);
+            currentSegment.clear();
+            dataIndex = 0;
+        }
+    }
+
+    // If there's any remaining data in the current segment, add it to the list
+    if (!currentSegment.empty()) {
+        segments.push_back(currentSegment);
+    }
+
+    return segments;
+}
+
+int main() {
+
+    std::cout << std::setprecision(32); // 设置输出精度
+
+
+    std::string filename = "../CY4457_5G16M.csv";
+    int windowSize = 75; // 设置滑动窗口的大小，根据数据特性调整
+    int samplingInterval = 75; // 设置采样间隔
+
+    // 从CSV文件中读取电压数据
+    std::vector<SamplePoint> voltageData = readVoltageDataFromFile(filename);
+
+    // 均值滤波处理数据
+    std::vector<double> smoothedData = meanFilter(voltageData, windowSize);
+
+    // 寻找第一个波峰位置
+    int peakPosition = findFirstPeakSlidingWindow(smoothedData, windowSize);
+
+    std::vector<SamplePoint> sampledData;
+
+    if (peakPosition != -1) {
+        // 输出第一个波峰的位置信息
+        printf("First peak detected at index: %d\n", peakPosition);
+        printf("Time: %lf\n", voltageData[peakPosition].time);
+        printf("Voltage: %lf\n", voltageData[peakPosition].voltage);
+
+        // 按照采样间隔对voltageData进行采样
+        sampledData = sampleData(voltageData, samplingInterval, peakPosition);
+
+        // 输出采样后的数据
+        printf("%s", "Sampled Data:\n");
+        for (const auto &point: sampledData) {
+            printf("Time: %.16lf,Voltage: %.16lf\n", point.time, point.voltage);
+        }
+
+    } else {
+        printf("No peak detected.\n");
+    }
+
+
+    double highThreshold = 0.1;
+    double lowThreshold = -0.1;
+
+    // 转换采样后的数据
+    std::vector<SamplePoint> transformedData = transformData(sampledData, highThreshold, lowThreshold);
+
+    // 输出采样后的数据
+    printf("Sampled Data:\n");
+    for (const auto &point: sampledData) {
+        printf("Time: %.16lf,Voltage: %.16lf\n", point.time, point.voltage);
+    }
+
+    // 定义给定的序列
+    std::vector<double> pattern = {1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1,
+                                   -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1,
+                                   -1, -1, 1, 1, -1, 0, -1};
+
+    // 使用函数进行处理
+    std::vector<std::vector<SamplePoint>> segments = splitData(transformedData, pattern);
+
+
+    printf("\nsegments size %zu\n", segments.size());
+
+    // 打印分割后的数据
+    printf("\nSegments of Transformed Data:\n");
+    for (const auto &segment: segments) {
+        for (const auto &point: segment) {
+            printf("%.16lf, %.16lf\n", point.time, point.voltage);
+        }
+        printf("\n");
     }
 
     return 0;
+
 }
-// 101      010         11
-// 1,-1     ,-1 1,        1
-// 1,-1,-1 1,1
