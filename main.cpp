@@ -16,6 +16,21 @@ struct SamplePoint {
     double voltage;
 };
 
+std::vector<std::vector<double>> patterns = {
+        {1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, 0, 1},
+        {1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, 1, -1},
+        {1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, 1, 0},
+        {1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1,
+                1, -1, 1, 1}
+};
+
 // 均值滤波函数
 std::vector<double> meanFilter(const std::vector<SamplePoint> &data, int windowSize) {
     int n = data.size();
@@ -140,35 +155,78 @@ std::vector<SamplePoint> readVoltageDataFromFile(const std::string &filename) {
     return voltageData;
 }
 
-// Function to split transformedData with the given pattern
-std::vector<std::vector<SamplePoint>>
-splitData(const std::vector<SamplePoint> &transformedData, const std::vector<double> &pattern) {
-    int patternSize = pattern.size();
-    int dataIndex = 0;
+bool isPatternMatch(const std::vector<SamplePoint> &transformedData, size_t startPosition,
+                    const std::vector<double> &pattern) {
+    if (startPosition + pattern.size() > transformedData.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < pattern.size(); ++i) {
+        if (transformedData[startPosition + i].voltage != pattern[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::vector<std::vector<SamplePoint>> splitData(const std::vector<SamplePoint> &transformedData) {
+    size_t startPosition = 0;
     std::vector<std::vector<SamplePoint>> segments;
-    std::vector<SamplePoint> currentSegment;
 
-    for (const auto &point: transformedData) {
-        currentSegment.push_back(point);
+    while (startPosition < transformedData.size()) {
+        bool patternFound = false;
 
-        if (dataIndex < patternSize && pattern[dataIndex] == point.voltage) {
-            dataIndex++;
+        for (const auto &pattern: patterns) {
+            if (isPatternMatch(transformedData, startPosition, pattern)) {
+                if (startPosition > 0) {
+                    segments.push_back(
+                            std::vector<SamplePoint>(transformedData.begin(), transformedData.begin() + startPosition));
+                }
+                startPosition += pattern.size();
+                patternFound = true;
+                break;
+            }
         }
 
-        // Check if the pattern is complete, and if so, add the segment to the list and reset
-        if (dataIndex == patternSize) {
-            segments.push_back(currentSegment);
-            currentSegment.clear();
-            dataIndex = 0;
+        if (!patternFound) {
+            startPosition++;
         }
     }
 
-    // If there's any remaining data in the current segment, add it to the list
-    if (!currentSegment.empty()) {
-        segments.push_back(currentSegment);
+    if (startPosition < transformedData.size()) {
+        segments.push_back(std::vector<SamplePoint>(transformedData.begin() + startPosition, transformedData.end()));
     }
 
     return segments;
+}
+
+std::vector<std::vector<int>> convertToBinary(const std::vector<std::vector<SamplePoint>>& segments) {
+    std::vector<std::vector<int>> binarys;
+    std::vector<std::vector<int>> map = {
+            {-1, -1, 0, 0, 0},
+            {-1,  0, 0, 0, 1},
+            {-1,  1, 0, 1, 0},
+            { 0, -1, 0, 1, 1},
+            { 0,  1, 1, 0, 0},
+            { 1, -1, 1, 0, 1},
+            { 1,  0, 1, 1, 0},
+            { 1,  1, 1, 1, 1}
+    };
+
+    for(const auto& segment : segments) {
+        std::vector<int> binary;
+        for(size_t i = 0; i + 1 < segment.size(); i += 2) {
+            for(const auto& m : map) {
+                if(segment[i].voltage == m[0] && segment[i+1].voltage == m[1]) {
+                    binary.insert(binary.end(), m.begin() + 2, m.end());
+                    break;
+                }
+            }
+        }
+        binarys.push_back(binary);
+    }
+
+    return binarys;
 }
 
 int main() {
@@ -176,7 +234,7 @@ int main() {
     std::cout << std::setprecision(32); // 设置输出精度
 
 
-    std::string filename = "../CY4457_5G16M.csv";
+    std::string filename = "../voltage_data.csv";
     int windowSize = 75; // 设置滑动窗口的大小，根据数据特性调整
     int samplingInterval = 75; // 设置采样间隔
 
@@ -219,29 +277,32 @@ int main() {
 
     // 输出采样后的数据
     printf("Sampled Data:\n");
-    for (const auto &point: sampledData) {
+    for (const auto &point: transformedData) {
         printf("Time: %.16lf,Voltage: %.16lf\n", point.time, point.voltage);
     }
 
-    // 定义给定的序列
-    std::vector<double> pattern = {1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1,
-                                   -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1,
-                                   -1, -1, 1, 1, -1, 0, -1};
+    std::vector<std::vector<SamplePoint>> segments = splitData(transformedData);
 
-    // 使用函数进行处理
-    std::vector<std::vector<SamplePoint>> segments = splitData(transformedData, pattern);
-
-
-    printf("\nsegments size %zu\n", segments.size());
-
-    // 打印分割后的数据
-    printf("\nSegments of Transformed Data:\n");
-    for (const auto &segment: segments) {
-        for (const auto &point: segment) {
-            printf("%.16lf, %.16lf\n", point.time, point.voltage);
+    for (size_t i = 0; i < segments.size(); ++i) {
+        std::cout << "Segment " << i + 1 << ":" << std::endl;
+        for (const auto& sample : segments[i]) {
+            std::cout << "(" << sample.voltage << ", " << sample.time << ") ";
         }
-        printf("\n");
+        std::cout << std::endl;
     }
+
+    std::vector<std::vector<int>> binarys = convertToBinary(segments);
+
+    // Display the binary segments
+    std::cout << "Binary segments:\n";
+    for(const auto& binarySegment : binarys) {
+        std::cout << "[ ";
+        for(const auto& bit : binarySegment) {
+            std::cout << bit << " ";
+        }
+        std::cout << "]\n";
+    }
+
 
     return 0;
 
